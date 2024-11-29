@@ -1,0 +1,49 @@
+stages:
+  - build
+  - scan
+  - push
+
+variables:
+  DOCKER_IMAGE: "amoracamila12"
+  IMAGE_NAME: "ambiente"
+  AWS_ACCESS_KEY_ID: "<AWS_ACCESS_KEY_ID>"  # Variáveis de autenticação da AWS
+  AWS_SECRET_ACCESS_KEY: "<AWS_SECRET_ACCESS_KEY>"
+
+# Job de Build
+build_image:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker info  # Verifica o Docker
+    - docker build -t $DOCKER_IMAGE/$IMAGE_NAME-homolog --build-arg ENVIRONMENT=homolog -f Dockerfile .
+    - docker build -t $DOCKER_IMAGE/$IMAGE_NAME-prod --build-arg ENVIRONMENT=prod -f Dockerfile .
+    - docker build -t $DOCKER_IMAGE/$IMAGE_NAME-teste --build-arg ENVIRONMENT=teste -f Dockerfile .
+  only:
+    - main  # Aciona o pipeline somente para a branch main
+
+# Job de Scan com Trivy
+scan_image:
+  stage: scan
+  image: aquasec/trivy:0.29.0  # Versão específica do Trivy
+  script:
+    - trivy image --no-progress --exit-code 0 $DOCKER_IMAGE/$IMAGE_NAME-homolog > trivy-homolog.log || true
+    - trivy image --no-progress --exit-code 0 $DOCKER_IMAGE/$IMAGE_NAME-prod > trivy-prod.log || true
+    - trivy image --no-progress --exit-code 0 $DOCKER_IMAGE/$IMAGE_NAME-teste > trivy-teste.log || true
+  only:
+    - main  # Aciona o pipeline somente para a branch main
+
+# Job de Push para o Docker Hub
+push_image:
+  stage: push
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $DOCKER_IMAGE/$IMAGE_NAME-homolog
+    - docker push $DOCKER_IMAGE/$IMAGE_NAME-prod
+    - docker push $DOCKER_IMAGE/$IMAGE_NAME-teste
+  only:
+    - main  # Aciona o pipeline somente para a branch main
